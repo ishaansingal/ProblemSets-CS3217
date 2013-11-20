@@ -1,0 +1,72 @@
+CS3217 PS4 – Falling Bricks
+
+Problem 1
+a. As it can be seen from data-model diagram (data-model.png), the BrickViewController contains a PhysicsEngine object and all the ‘world’ views. The PhysicsEngine maintains an array of PhysicsModel objects and has other necessary properties (gravity, timestep). The PhysicsModel stores all the relevant object properties (size, rotation etc).
+
+b. Refer to module-dependencies.png
+The BrickViewController initializes the PhysicsEngine object by setting the gravity and timeStep. It then sets up all the object views (the bricks and the walls), by first creating the PhysicsModel objects in the PhysicsEngine, and then initializing an array of all the views (brickViews, wallViews). It also defines the protocol <ModelModifyProtocol> functions “didMove” and “didRotate” that update the corresponding object view when they are called.
+
+The PhysicsEngine has all the ‘world’ PhysicsModel objects (allMovables, allImmovables) on which it periodically checks for collision. As the timestep is initially set, the timer runs periodically at the given timeStep. At every timeStep, the engine first updates the gravity (based on accelerometer/device orientation and GMultiplier). It then checks for collision between all the objects (allMovables, allImmovables) and sets the objects position accordingly. 
+Note: since the NSTimer itself creates a separate thread, an explicit thread to run the PhysicsEngine was not created
+
+The PhysicsModel stores all the object information necessary to recreate an object like size, rotation, velocity, angular velocity, inertia, rotation matrix etc. It also implements the protocol <ModelModifyProtocol> that calls the delegate when the center is changed (didMove) or is rotated (didRotate). 
+
+Alternative designs: 
+- The ViewController could maintain the objects array (along with the existing view array) and periodically call the PhysicsEngine to check for collisions. However, this would make future integrations more difficult, as the physics engine should itself be a lone entity and should maintain its own timer. I wanted the view controller here to just maintain the views
+
+- The current implementation creates two separate arrays for movable objects and immovable objects. This can be combined into one by giving the model a Boolean property called “canMove”. However, I believe that maintaining two arrays displays clarity and maintains a level of modularity. 
+
+Extension for complex shapes:
+The PhysicsModel would have an additional property to know what type of object it is (circle, rectangle, pentagon etc). The collision function would then redirect the detection algorithm accordingly. For circles, the algorithm is simpler as we just have to compare the distance between the centres to the sum of radius/height/width (depending on type of objects). For polygons, if they are considered as rectangle bounding them, then the algorithm remains the same, and a function to retrieve the bounding box is required. Otherwise, we have to check the collision from each edge’s persepective.
+
+Problem 3 – Testing
+
+There are sets of test cases to make sure that the implementation conforms to the given specifications. However, for each test case, the configuration of the ‘world’ might have to be different to isolate each of the effects. This had to be done by modifying the code, so as to set the appropriate environment (changing certain properties of the model objects/gravity)
+
+Black-box testing:
+- Testing gravity:
+  o	In whichever orientation the device is, the objects should fall to the bottom of the screen (relative to the orientation). 
+  o	If the accelerometer is being used, the objects should fall down to according to the lowest point of the device and gather there.
+  o	If the objects are stationary, they should react quickly to a change in orientation (or movement of device) and start to move in the direction of gravity
+  o	If the objects are moving in the opposite direction of the gravity, they should gradually stop, and subsequently start moving in the direction of gravity
+  o	As the gravity is acceleration, the objects should speed in the direction of gravity as they move towards the bottom of the device
+  o	If the gravity multiplier is increased significantly (at the start of the application), the objects should move visibly faster in the direction of gravity
+
+- Test Collision between two objects
+  o	The objects should not behave any collision-like behavior when the objects have not collided visually
+  o	The rotated objects should display collision behavior in its rotated form (and not based on its initial degree of rotation)
+  o	The model and view should move in tandem (the change in model properties should be visually observable); no collision-like behavior with invisible objects and should only behave when two objects have visually collided
+  o	Collisions between wall and object: the collision should not have any impact on the wall (should stay unmoved) no matter how heavy the objects are (finite mass):
+  	 -> The object should be able to rest in the middle of the wall (at the bottom) and not slide to the corners at appropriate orientations
+    	 -> During fast collisions, the object should not overlap with the boundaries of the wall, or cross it altogether.
+  	 -> When at rest, if the device is tilted slightly, the object should be able to slide along the surface of the wall to the corner the device is tilted in (also depends on the friction coefficient)
+  o	Collision between two objects: the objects should collide with each other without significant overlapping. (Rest of the behavior is similar to that between the wall and the object)
+
+- Test collision between multiple objects:
+  o	Multiple objects during collision should depict the same kind of behavior, as two objects colliding with each other would do minimal overlapping and natural bounce behavior).
+  o	All the objects should be able to eventually come to rest under the influence of gravity (considering the device itself is unmoved).
+  o	Under fast collision, the objects shouldn’t significantly protrude into each other (or cross the wall altogether) and should either pile up or simply rest against the wall eventually.
+
+- Test moment of inertia
+  o	Two objects are given the exact same properties, except that one has a significantly higher mass than the other; the lighter object rotates significantly more after the collision than the other
+  o	Moment of inertia is automatically tested during collision between walls and objects, as the walls don’t rotate at all (due to infinite mass)
+
+- Test Friction
+  o	Two objects are given the exact same properties, except that one has a friction coefficient of 0 and the other 1. Arrange the objects on the wall and tilt the device to slide them; the object with coefficient 1 should slide a lot faster than the one with 0 coefficient
+
+- Test restitution
+  o	Two objects are given the exact same properties, except that one has a restitution coefficient of 0 and the other 1. Arrange the objects such that both are at the same distance from the bottom and let them free fall; the object with coefficient 1 should bounce a lot more than the one with 0 coefficient before coming to rest
+	
+
+It should be noted that to test certain aspects above (like friction, restitution, moment of inertia), the code had to be modified and hence this black-box testing overlaps with grey-box testing.
+
+Certain white-box testing has also been implemented here, by testing the model class. The constructors, inertia and rotation matrix getters, and the delegates were unit tested.
+Also, the collision function of the physics engine can be primitively tested to check for the basic collision detection.
+
+Bonus Problem:
+a.	Problem 1 -> 2hrs
+	Problem 2 -> 20hrs
+	Problem 3 -> 6hrs
+	Problem 4 -> 5hrs
+b.	Currently, the collision function in the physics engine is made of many smaller methods (to have better cohesion). However, at the start the collision was coded out as one big function and then split into smaller methods. If I had made it into smaller functions from the start, the debugging would have been much easier. The unit tests also helped later, which could have been developed earlier
+c.	This problem set did not require much clarification, as all the things were present in the appendix. I did, however, stumble a bit at the pseudo vectors (angular velocity and torque), which wasn’t very clear in the appendix. 

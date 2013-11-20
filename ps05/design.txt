@@ -1,0 +1,333 @@
+Problem 1:
+
+The initial screen gives the user two options:
+- Design
+- Play
+
+In design:
+- The user has all the functionalities that he had for designing (as in PS3) such as translate, rotate, room, double tap to delete.
+- Additionally, the user has the option to test the design he just created by pressing "Start", which has all the rules of Playing a game described below. 
+	+While in this Testing mode, the user can only see the End (return to the design) or Back (go back to the main screen)
+	+ If the user loses/wins while the testing of the game, it will simply prompt the user to end the play mode and return to design that level
+- Save: the user can save any given design, but the name should be different from that of a Pre-saved level
+- Load: the user can load any level from the list that pops up after he taps the load button. The user can also delete any level from that list (cannot delete presaved levels)
+
+In Play:
+- The game loads all the saved levels in the document directory and loads the level in a chronological manner
+- The wolf and the pig must be in the game area to be able to play that level. Otherwise, the game would not start
+- The wolf does not interact with any objects and will stay in the position set in the level
+- The number of wolf breaths (hearts) and the score is displayed in the bottom of the screen
+- Tap the wolf to show the arrow and the power bar (on top of the wolf). 
+	+ Move the arrow to specify the angle
+	+ Hold the finger on the wolf to determine the power (the power will fill and then decrease until the user lifts his finger from the wolf). After the finger is lifted, the wolf blows with the power in the power bar at the specified angle
+
+- The objects don't receive any damage if no breath his released
+- The pig cries and subsequently dies after it has received certain threshold damages. The score is updated based on the damage the pig receives. If the pig dies, the number of breaths left is added to the score
+- If the breaths are over and the pig is still alive, Game Over pop up is displayed giving the user the option to Retry the game
+- If the pig dies, the Level Complete popup is displayed with the option of Going to the next level
+- The Restart button at the bottom restarts the level
+- The load button shows a table of all saved levels (including preserved levels) the user can load. If the level is not a valid level (i.e. pig & wolf not in game area), an error message is displayed
+	+ The user cannot delete a preserved level or a level that is currently in play
+NOTE 1: if the wolf is scaled, the breath power will be different (larger wolf --> more power)
+NOTE 2: if there are too many heavy objects on top of each other, it would affect the damage as the impulse would be high. Avoid this.
+
+
+
+
+Problem 2:
+
+a) 
+Determine the angle:
+- Dragging (Panning) the arrow in any direction rotates it around its centre. The max and min angle of the arrow is fixed to +80/-80 degrees. Based on this angle, the breath is released
+Note: to implement this pan feature, a long press was used as it has more sensitivity can give the location of the translation point
+
+Determining the power:
+- Long pressing on the wolf determines the power with which the breath is released. Since the power bar is dynamic (fills completely and then starts to decrease), the power of the projective is at the level of the breath bar when the user lifts his finger
+A ratio of MaxPower and the power from the breath bar is calculated, based on which the power is set
+
+Integration of power with the Physics engine:
+- An initial velocity of the breath object is set based on the power and angle set by the user. If the power is created, the velocity vector's magnitude is varied accordingly. As an objet in Box2D physics engine can have a predefined linear velocity, the integration was rather straight forward. The breath body in the physics engine was given this initial velocity.
+The Box2D also supports applying an impulse or force to a particular object. While the impulse is similar to the predefined velocity, the application of force would be more complicated as we need to determine how long the force should be applied.
+
+b)
+I decided to use an open source physics engine - Box2d. 
+I actually extended the Physics Engine from PS4 to support circle collisions (as attached in the folder)  and it worked well, but the performance was very slow when there were a lot of objects.
+Hence, transitioned to Box2d is highly optimised to give better performance. It is written in C++, and hence the whole project had to be migrated to to Object C++.
+
+Design of engine used - Box2D:
+- b2World:
+	+represents the whole physics world
+	+bodies are instantiated in this world
+	+physics is simulated through the function Step(…), where we need to specify the time step, the number of velocity iterations and number of position iterations
+- b2Body:
+	+represents the whole body of the object
+	+this body is defined by the fixtures of the objects (representing different parts of the body)
+	+defines the position, rotation, velocity and type (static = walls, dynamic = blocks etc) of the body
+- b2Fixture
+	+defines the physics property of a body part (in our case, the whole body)
+	+ defines the friction, restitution, density (in our case, the mass itself is used) and shape (used b2Shape described below)
+- b2Shape
+	+based class for shapes that has subclasses including circles and polygons
+	+the collision algorithm is kept separate from the b2shape class
+- b2ContactListener
+	+box2d allows to register a listener by subclassing their abstract contact listener classes.
+	+the class was implemented by "MyContactListener" in this project
+	+This was very useful for our case as this class is called each time a collision between two objects is detected, and helps us to easily determine the impulse between the corresponding objects.
+
+Note: Box2d allows users to store a pointer to the user data associated to each body. Here, I used this store the game model that b2Body represents
+
+Integration with the Physics Engine:
+- A few functions were created that converted the existing models into b2Bodies (by defining their shape and fixtures). These were instantiated in the b2World object. 
+- The world is given a fixed gravity and checked for collision at every time step. The b2World needs to know the time step, which is provided.
+- The Box2D uses metres instead of pixels and hence a converter (to convert the view pixels to metres) was created.
+- As mentioned before, the user data of each body is given the model it represents. Hence, after every time step, the Body updates its own model (which then sends a delegate to update the view)
+- b2ContactListener was subclassed (in the class MyContactListener) to know every time a collision is detected and then determine the corresponding behaviour. 
+
+Design of Physics Engine different from Ps4:
+- The box2d is more modular and complex as it supports complex simulation, like the collision of fan blades or ropes
+- It has implemented mutexes to disable race conditions and hence updates the model better
+- It uses an observer pattern to obtain collision data
+- The shapes are separated from the collision algorithm which wasn't done in PS4
+
+c)
+Interactions between game objects:
+- The Breath's power gets reduced by half when it collides with a straw block and straw block is destroyed
+- The Breath gets destroyed when it collides with any other game objects (but not with the walls).
+- The blocks too have get destroyed based on the total impulse they receive. Each block has a different mass and hence the collision behaviour is different for each block (iron is very difficult to move & destroy as it has a high mass).
+- Before a breath is released, the interaction between blocks, pigs and walls does not create any damage
+
+Subclassing the b2ContactListener provides the relevant information to enable different interactions between game objects. The post_solve(..) method in the b2ContactListener gives information about the colliding objects and their impulse. This class sends a delegate to the PhysicsEngineSupport to apply the interaction between the two objects,
+Based on the type of collision objects, and their impulse, the damage is applied to each object. The damage is calculated in the PhysicsEngineSupport class after it receives a delegate
+Based on the impulse of each collision, the 'health' of each object is reduced. 
+
+This method seems to be very accurate to determine any object behaviours, as the use of listeners ensures efficiency as the physics engine does not need to know anything about the developer's logic design.
+
+d)
+NSTimer was used to start the game and check for collisions at a given time step. This was used in PS4 as well. 
+At every time step, the physics engine was called to check for collisions; the models and their views were accordingly updated. Since a function Step(.., .., ..) checks for the collision, the integration of the timer with the physics engine was fairly straight forward.
+
+NSTimer is easy to configure, start and stop and does not create any thread specific complications. However, since the NSTimer does not create a separate thread, the view pauses when the user manually scrolls the view.
+
+For this, NSThread and GSD can be used. However, for this project such high level of thread management was not required and hence these two were not implemented.
+
+e) Refer to the file MDD.png attached
+
+
+
+Problem 3:
+Since an established external physics engine was used, the Physics engine was not tested. Hence, the majority of the testing was based on making sure that the existing functionalities (from PS3) worked and that the integration was successful (integration testing).
+
+Every time a small feature was added, the whole application was not tested. Only the group of features affected from adding this feature was tested. If the added feature is big enough to affect many aspects, then a full test is run.
+
+Every time a feature is modified, a similar testing strategy was applied. However, here more care needs to be taken, as many features could be depending/using the resources of a small feature and thorough testing might be required.
+
+Testing was also done each time a major refactoring took place, as testing for every small refactoring would be too inefficient. 
+
+Black-Box Testing
+Different conditions apply in different modes and hence need to be tested accordingly
+
+Main Screen
+- Tapping the Play button
+	+	Should load the Play screen, where there should be no palette and a level should be automatically loaded for play
+-	Tapping the Design button
+	+	Should load the Design screen (like the one in PS3), with all the design features, and a feature to test the game (by pressing Start)
+-	Tapping back button from Play/Design Screen
+	+	Should go back to this main screen at all times
+
+ While designing a level (most of the design tests are imported from ps3):
+- On launching of the Design screen:
+	+	The wolf, pig and straw-block object should be present on the palette
+	+	The gamearea should be vacant
+	+	Reset button pressed - shouldn’t have any impact on the layout
+	+	Save button pressed – prompt for input name and shows the message whether the file was successfully saved
+	+	Load button pressed – display (pre)saved files popup in bottom right
+- On palette:
+	+	Rotate the object in place – the object should not rotate
+	+	Pinch the object in place – the object should not resize
+	+	Tap on the object in place – the block should change type in the order straw-wood-stone-iron, wolf object and pig object should not respond to this gesture
+	+	Double tap on the object in place – the objects should not respond to this gesture
+	+	Drag the object in place – as soon as the drag starts, the object should resize and drop into the game area (without any rotation)
+- Transition from palette to gamearea:
+	+	Drag from palette to gamearea – the object should retain its original default size and shouldn’t have any rotation
+	+	The wolf and pig object should no longer be present on the palette (only a faded image to show that the object is in the gamearea)
+	+	If a block is dragged to the game area, a new straw block should appear on the palette (that conforms to all the conditions of “on palette” mentioned above)
+	+	If the gameobject is translated within the palette area and the user lifts his finger, the object should retain its palette position (NEW)
+	+	As soon as the object is dragged into the gamearea (users finger in gamearea), the object should stay within the bounds of the gamearea (NEW)
+	+	If the gamearea is scrolled, and the object is dragged from the palette onto the scrolled area, the object should be located into the scrolled area and not the initial area (Bug in ps3 – fixed)
+- In gamearea:
+	+	Translate the object in place – the respective object should translate based on the finger location, but would get blocked near the boundaries of the game area (cannot cross the game area in any direction) – This should remain valid even if the object is rotated or scaled
+	+	Translate the object in place – while the user is dragging the object in the gamearea, the gamearea should not scroll
+	+	For blocks, attempt to drag should not change block type
+	+	Pinch the object in place – the respective object should resize according to the pinch amount (in the scale range of 0.6 to 1.6)
+	+	Rotate the object in place – the respective object should rotate according to the amount of rotation placed on them
+	+	Rotate and Pinch simultaneously – both operations should be performed simultaneously, with the object being resized and rotated
+	+	Single Tap the object in place – only block should respond to this gesture by changing its type in the round robin fashion as mentioned previously
+	+	Double tap object in place – the object should be deleted from the gamearea; if the object is a wolf/pig, a new wolf /pig should appear on the palette.
+	+	Dragging on the plain scrollable area should simply scroll the gamearea
+	+	Rotation, pinch, double tap or tap on plain scrollable area should not have any impact on the gamearea 
+	+	Performing any of the gestures within the pixel range of the sprite – the sprite should respond instantaneously, and any action even close to the sprite should not have any impact on the object sprite
+
+- Save button:
+	+	Since the game is always in designer mode at the moment, it should pop an alert view whenever the button is pressed prompting the user to enter the name of the file to be saved.
+	+	If the user inputs a file name that is already present, it will overwrite an existing file 
+	+	If the file is PreDesigned level, prompt the user for another name (NEW)
+	+	If the user enters an invalid name, an error message will popup
+- Load button:
+	+	It should display a list of saved files to choose from – selecting one name and tapping load should load the saved design immediately and close the list
+	+	Tapping on delete after the load/delete popup appears should delete the level and close the popup
+	+	If there are no saved files, the popup should be empty (NOTE: there should always be some pre-saved files and this cases should never arise)
+- Reset button:
+	+	As soon as the reset button is pressed, all the objects return to their natural state and all the “on palette” rules described above apply
+	+	The functionality of the reset button should be valid at any point in the game
+	+	Since there is no undo feature, once it is reset, the user cannot go back to the previous state (unless it was saved)
+
+Playing a level:
+Valid for both Play Screen and the Start feature in the Designer screen
+- Play possible:
+	+	If the both and pig and wolf are not in the game area, show an error message
+	+	If both the pig and wolf are in the game area, start the physics engine
+	+	No matter how many times a level is started, it should start afresh (without any existing damage) 
+	+	All the design interactions should be disabled (translation, rotation, scaling)
+	+	The toolbar should only show two buttons: End & Back (load, and reset features are disabled)
+	+	The number of wolf breaths (in the form of hearts) should appear in the bottom left and a Score label should appear in the bottom right of the application
+	+	The physics engine should be started and the pig and all the blocks should fall down (under the influence of gravity) and come to rest initially (rest level is the ground)
+	+	Any interaction now, before any breath is released should not have any impact on the score
+- Wolf Tapped:
+	+	If the wolf still has breaths (wolfs number of breaths > 0), an arrow in front of the wolf’s mouth and a powerbar on top of the wolf should appear
+	+	If the wolf does not have any breath, the wolf should not respond
+	+	The arrow’s initial point (arrow center) should remain anchored at one point when it is rotated
+	+	The arrow should change color to red when the arrow is rotated (one finger rotation) and return to green when the user lifts his finger
+	+	The arrow angle can be only be rotated within a limit in front of the wolf
+	+	If a wolf has already released a breath and is tapped again when it has breaths left, the previous angle and power of breath should be displayed (valid even if the previous breath has not destroyed)
+- Wolf Long tapped
+	+	If there is no arrow/powerbar visible on the screen, long tapping the wolf should not have any impact on the wolf. 
+	+	If the wolf has been tapped once, and the arrow and powerbar are visible, long-pressing the wolf should animate the breath bar
+	+	While the users finger is still on the wolf, the breath bar should first keep filling, and once it fills, it should start decreasing
+	+	When the user releases his finger, the power bar should stop, and both the powerbar and the arrow should both disappear from the view
+
+- Breath Released:
+	+	The wolf should animate inhaling and exhaling, while a wind animation in front of his mouth should be executed. After the animation is completed, the wolf should return to its default image.
+	+	A heart (wolf’s number of breath) should reduce from the bottom left
+	+	After the wolf has finished animating, the breath should be released
+	+	The breath should be constantly animating and be launched in a projectile style based on the angle power set by the wolf
+	+	The gamearea should automatically scroll if the breath goes outside the view
+	+	The breath will be automatically destroyed if it crosses the border (top right) of the gamearea
+	+	All the objects should interact with each other realistically
+	+	All the game objects (apart from the wolf) can disappear from the game upon sufficient impulse application 
+	+	If the breath does not collide with any game object (apart from the walls) it should be automatically destroyed after 4.5 seconds
+	+	While the breath travels, it should leave a trace behind that stops as soon as the breath collides with a valid game object (not walls)
+	+	The breath should be destroyed with wind-disperse animation
+	+	This trace should only be removed when a subsequent blow is made
+
+- Collisions:
+	+	If the breath collides with a straw block, the straw block should be immediately destroyed and the power of the breath should be halved i.e. it should continue along the same path but with much half the velocity
+	+	Collisions with the pig should increase the score at the bottom right of the screen (even during the collision of pig with other game objects and walls once a breath is released)
+	+	If the impulse on the pig reaches a threshold, the pigs image should be changed to cry
+	+	After the impulse on the pig reaches a threshold, the pig should die 
+
+- Pig Died:
+	+	The pig should die with an animation (disappear completely at the end of the animation)
+	+	The score should increase if the wolf has any breaths left while the pig has died
+	+	A success message should be displayed on the screen 
+
+- Last Breath Released:
+	+	After the last breath is released, it should wait for the wind/pig to die before doing anything
+	+	If the breath has died, but the other objects are still interacting, don’t do anything 
+	+	If the pig dies, all the pig-died conditions apply
+	+	If the breath dies and all the other objects are at rest, show a Game Over popup (along with wolf die animations in background
+
+- Game Success popup
+	+	The background should fade and a pop up saying “Good Job” should appear
+	+	The button should say “End” if being played from Designer screen or “Next Level” if in Play Screen
+- “End” game in Design mode
+	+	“End” should switch it back to the designer mode where all the design conditions are valid and none of the play conditions are active
+	+	“End” should show the original design of the level and not the game play aftermath
+	+	Since all the design functions are available, even the Reset, Save and load buttons are enabled
+	+	The user can explicitly end the game at any point by pressing “End” button at the bottom. This should work at ALL times
+- “Next Level” in Play Screen
+	+	“Next Level” should load the next valid game from the documents directory
+	+	After the next level is loaded, all the play conditions are valid again
+
+- Gave Over popup
+	+	The background should fade and a pop up saying “Game Over” should appear
+	+	The button should say “End” if being played from designer mode or “Retry” if in play made
+- “Retry” in Play Screen
+	+	Should reload the current level being played (same functionality as Restart in the Play screen)
+
+When in play screen:
+- Back button
+	+	Should immediately load the parent view no matter what
+- Restart button pressed
+	+	Whichever level is loaded, reloads it and starts the play (same functionality as retry)
+
+
+Glass-box testing:
+While designing a level:
+-	Palette:
+	+	Check that at all times, the palette should not contain more than one wolf/pig/block object
+	+	After reset button is pressed, the palette should contain exactly one object of all three types
+-	In game area:
+	+	When the object is rotated or scaled, make sure that its model properties are in sync with the view
+
+While playing:
+- Breath Release style:
+	+	Make sure that the angle of the arrow is the same as that calculated in the program
+	+	Make sure that the power of the wind is the same as the width of the powerbar in the view
+- Breath in game:
+	+	Make sure that there is only one breath object at any point in the game (two breaths are the same time is not supported) 
+- Objects in collision
+	+	Make sure that even the blocks receive damage by using logs every time they collide with other objects (the pigs damage can be seen through the score)
+- Box2D
+	+	The world should be created with all the bodies in it when the play starts, and this world should be destroyed each time play ends
+
+Loading a file
+- Loading a file should remove any trace of previous objects and should maintain the rotation and scale property when the level was saved
+- The game should still maintain only one copy of wolf and pig and an array of the blocks being displayed on that screen.
+
+Not much unit testing was possible here as the physics engine was external and the model was not tested. The model could have been unit tested for decoding and encoding, but was assumed to be working from PS3. Also, different protocols could have been unit tested for sending the correct delegates but were not implemented.
+
+
+
+Problem 4:
+Bells and Whistles:
+- A Main screen to navigate to Play or Design
+- Delete a saved level
+	+cannot delete a level currently being played or a saved level
+- Cannot overwrite a Pre-designed level
+- Cannot Play a game that does not have both pig and wolf in the game area
+- Wolf Blow, wind suck, and wolf die animations
+- Breath bar animation (filling and emptying)
+- Pig cry & Pig die animation
+- Moving clouds in background & a sun
+- Breath constantly rotating and dispersing animations (only released once the wolf has exhaled)
+- Score image and the score value
+- Hearts to show the number of wolf breaths lefts
+- Game over screen giving the user the option to end the game (designer mode) or retry (play mode)
+- Success screen when pig successfully killed - option to end the game (designer mode) or progress to the next level (play mode)
+- Restart a game in Play mode
+- After a level is designed, it can be testing by pressing Start and then the user will be returned to the design
+- The breath has a trajectory which stops when the breath hits any game object and is removed when the subsequent breath is released
+- Automatically scrolling the game area if the breath extends beyond the view, following the given breath
+- Play some predesigned levels straightaway
+
+The animations were performed by first breaking the whole sprite into many small sprites and then animating the image view
+Predesigned levels are stored in the main application level, and are transferred to the document directory once the application starts
+Since both the PlayController and DesignController are subclasses of the GameViewController, they can use the physics engine (implemented in GameViewController) to play a game. 
+To Play, each design must be in the Document directory (either explicitly if the user has saved, or the program saves a temporary file)
+Restart simply re-loads the file that currently is being played.
+
+Hence, the main structural change was to make the PlayViewController and the DesignViewController subclasses of GameViewController to enable Playing feature in both modes. Apart from that, all the other bells and whistles were implemented by creating additional helper functions.
+Also, to better implement the load function, a view controller with a table was implemented (instead of a PickView implemented in PS3)
+
+Problem 5:
+a) > 60-70hrs
+
+b) I spent time in first extending the Physics engine in PS4 for circles and then even integrated it. I should have started with Box2d from the start which would have saved a lot of time.
+Also, since this part was highly UI specific, and I have never designed such a high intensive UI before, the learning curve was very high for me. 
+Also, I tried certain features that didn't work and spent too much time on them
+
+c) Not really, I was warned that my engine was slow. Other than that, this project was very open-ended
+
+d) Yes, all the problem sets helped in  grasping objective C in a significant manner.
+However, PS3 seems to be a very big jump from PS2 and some of the things can be shifted to PS2 as the PS2 itself doesn't take too much time. 
+I personally didn't feel that PS4 was as challenging as PS3 or PS5 as there were fewer things to learn and didn't take as much time. Hence the the PS4 duration could be shortened (now that the appendix is so detailed) to give more time for PS3 add PS5.
